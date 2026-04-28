@@ -1,7 +1,9 @@
 # app/llm.py
-import anthropic, json, re
+import google.generativeai as genai
+import json, re, os
 
-client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 SYSTEM_PROMPT = """You are a document data extraction specialist.
 Extract structured data from the document text provided.
@@ -26,25 +28,28 @@ INVOICE_SCHEMA = """{
 }"""
 
 def extract_invoice_data(text: str) -> dict:
-    prompt = f"""Extract invoice data from this document text and return JSON matching this schema:
+    prompt = f"""You are a document data extraction specialist.
+Extract invoice data from this document text and return JSON matching this schema exactly:
 {INVOICE_SCHEMA}
+
+Rules:
+- Return ONLY valid JSON. No markdown, no explanation, no preamble, no backticks.
+- If a field cannot be found, use null.
+- Numbers must be floats, not strings.
+- Dates in YYYY-MM-DD format.
 
 Document text:
 ---
-{text[:6000]}  
+{text[:6000]}
 ---
 
 Return ONLY the JSON object:"""
 
-    message = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=1500,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}]
-    )
+    response = model.generate_content(prompt)
+    raw = response.text.strip()
 
-    raw = message.content[0].text.strip()
-    # Strip markdown fences if present
+    # Strip markdown fences if Gemini adds them anyway
     raw = re.sub(r'^```json\s*', '', raw)
     raw = re.sub(r'\s*```$', '', raw)
+
     return json.loads(raw)
